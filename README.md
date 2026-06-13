@@ -1,4 +1,4 @@
-# 用 DDD Bounded Context 蓋一個單體應用 — Spring Boot 4 + Testcontainers 學習專案
+# Java/Spring Boot 4 單體應用 — Testcontainers 學習專案
 
 這是一份**學習導向**的教程專案,目標是讓你親手寫過後,能回答四個問題:
 
