@@ -11,6 +11,7 @@ dependencies {
 
     implementation(rootProject.libs.spring.boot.starter.web)
     implementation(rootProject.libs.spring.boot.starter.actuator)
+    implementation(rootProject.libs.spring.boot.starter.oauth2.resource.server)
 
     implementation(rootProject.libs.spring.modulith.starter.core)
     implementation(rootProject.libs.spring.modulith.starter.jpa)
@@ -32,6 +33,7 @@ dependencies {
     testImplementation(rootProject.libs.cucumber.spring)
     testImplementation(rootProject.libs.cucumber.junit.platform)
     testImplementation("org.junit.platform:junit-platform-suite")
+    testImplementation(rootProject.libs.pact.provider.junit5)
 }
 
 /**

@@ -11,7 +11,13 @@ dependencies {
     implementation(rootProject.libs.vault)
 
     testImplementation(rootProject.libs.spring.modulith.starter.test)
+    testImplementation(rootProject.libs.spring.boot.data.jpa.test)
+    testImplementation(rootProject.libs.spring.boot.jdbc.test)
     testImplementation(rootProject.libs.testcontainers.postgresql)
     testImplementation(rootProject.libs.testcontainers.vault)
     testImplementation(rootProject.libs.awaitility)
+
+    testRuntimeOnly(rootProject.libs.postgresql)
+    testRuntimeOnly(rootProject.libs.flyway.core)
+    testRuntimeOnly(rootProject.libs.flyway.postgresql)
 }
