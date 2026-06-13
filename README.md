@@ -9,7 +9,7 @@
 
 我們用一個小型電商(下單 → 扣款 → 扣庫存)當實際場景,把上面四件事一次練完。
 
-> 對應的設計文件:`../testcontainers-monolith-java.md`,本 README 是給「實際 clone 下來跟著做」的學習者。
+> 對應的設計文件:[`docs/design/testcontainers-monolith-java.md`](docs/design/testcontainers-monolith-java.md),本 README 是給「實際 clone 下來跟著做」的學習者。
 
 ---
 
@@ -640,7 +640,13 @@ curl -H "Authorization: Bearer $TOKEN" \
 ## 7. 專案結構導覽
 
 ```
-ecommerce-monolith-java/
+monolithic-app-with-testcontainers-tutorial-for-java/   (repo root)
+├─ README.md             你正在讀的這份
+├─ build.gradle.kts      根 build,所有子模組共用設定
+├─ settings.gradle.kts   宣告 6 個子模組
+├─ gradle/libs.versions.toml  版本目錄
+├─ gradlew, gradlew.bat  Gradle wrapper
+│
 ├─ shared-kernel/        三個 Context 共用的最小集合(VO + Event + 通用 Port)
 │
 ├─ product/              Bounded Context #1:商品 + 訂單
@@ -666,7 +672,9 @@ ecommerce-monolith-java/
 │
 ├─ docker-compose.yml    本機開發起 6 個服務
 ├─ scripts/vault-bootstrap.sh  種 Vault secret
-└─ docs/spring-modulith/ 自動產的模組關係 PlantUML / AsciiDoc
+└─ docs/
+   ├─ design/            原始設計文件 (testcontainers-monolith-java.md)
+   └─ spring-modulith/   自動產的模組關係 PlantUML / AsciiDoc
 ```
 
 每個業務 Context 內部都是 **Hexagonal 三層**(domain → application → adapter),這是落實 DDD Bounded Context 的常見搭配。Hexagonal 不是必要,但它讓「禁止 Domain 依賴 Spring」這類規則容易自動驗證。
