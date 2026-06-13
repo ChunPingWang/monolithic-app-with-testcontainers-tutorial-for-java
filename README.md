@@ -23,9 +23,10 @@
 6. [核心概念四:合約測試 (Contract Testing)](#6-核心概念四合約測試-contract-testing)
 7. [環境準備與五分鐘上手](#7-環境準備與五分鐘上手)
 8. [專案結構導覽](#8-專案結構導覽)
-9. [測試策略](#9-測試策略)
-10. [常見問題與排錯](#10-常見問題與排錯)
-11. [延伸學習](#11-延伸學習)
+9. [視覺化:循序圖 / 類別圖 / ER-Diagram](#9-視覺化循序圖--類別圖--er-diagram)
+10. [測試策略](#10-測試策略)
+11. [常見問題與排錯](#11-常見問題與排錯)
+12. [延伸學習](#12-延伸學習)
 
 ---
 
@@ -917,7 +918,443 @@ monolithic-app-with-testcontainers-tutorial-for-java/   (repo root)
 
 ---
 
-## 9. 測試策略
+## 9. 視覺化:循序圖 / 類別圖 / ER-Diagram
+
+下面所有圖都用 [Mermaid](https://mermaid.js.org/) 寫,GitHub 直接渲染。
+本機看可以用 VS Code 的 *Markdown Preview Mermaid Support* 擴充。
+
+### 9.1 循序圖 — Happy Path:下單 → 扣款 → 扣庫存 → 完成
+
+從 buyer 打 POST 開始,經過 4 個獨立交易,每段 commit 後才觸發下一段。
+這張圖把「Event Bus 的時間軸」具象化 — 注意 buyer 在 TX-1 commit 後就收到 201,後續三段是 async。
+
+```mermaid
+sequenceDiagram
+    actor Buyer
+    participant Web as POST /api/orders
+    participant Product as Product Context
+    participant Bus as ApplicationEventPublisher
+    participant Payment as Payment Context
+    participant Vault
+    participant MinIO
+    participant Inventory as Inventory Context
+    participant Redis
+    participant DB as PostgreSQL
+
+    Buyer->>Web: JWT + lines[]
+    Web->>Product: PlaceOrderCommand
+
+    rect rgb(225, 240, 255)
+        Note over Product,DB: TX-1 (商品模組)
+        Product->>DB: INSERT product.orders / order_lines
+        Product->>Bus: publishEvent(OrderCreatedEvent)
+        Product->>DB: INSERT event_publication
+    end
+    Product-->>Buyer: 201 Created {orderId}
+
+    rect rgb(255, 240, 220)
+        Note over Bus,DB: TX-2 (支付模組, async + AFTER_COMMIT)
+        Bus-->>Payment: OrderCreatedEvent
+        Payment->>Vault: get secret/payment-gateway
+        Vault-->>Payment: api-key
+        Payment->>Payment: gateway.charge() → Ok
+        Payment->>MinIO: PUT receipts/{id}.txt
+        Payment->>DB: INSERT payment.payments
+        Payment->>Bus: publishEvent(PaymentCompletedEvent)
+    end
+
+    rect rgb(225, 250, 225)
+        Note over Bus,DB: TX-3 (庫存模組)
+        Bus-->>Inventory: PaymentCompletedEvent
+        Inventory->>Redis: SET stock:{pid} NX PX (分散式鎖)
+        Inventory->>DB: UPDATE inventory.stocks
+        Inventory->>Redis: DEL stock:{pid}
+        Inventory->>Bus: publishEvent(InventoryDeductedEvent)
+    end
+
+    rect rgb(245, 245, 245)
+        Note over Bus,DB: TX-4 (回到商品模組)
+        Bus-->>Product: InventoryDeductedEvent
+        Product->>DB: UPDATE product.orders SET status_kind='COMPLETED'
+    end
+```
+
+### 9.2 循序圖 — Saga 補償:庫存不足 → 退款
+
+款已經扣了、收據已經寫到 MinIO,結果庫存不夠 — 必須補償退款。
+Saga 不是 try/catch,是「另一個事件」往回打。
+
+```mermaid
+sequenceDiagram
+    actor Buyer
+    participant Product as Product Context
+    participant Bus as ApplicationEventPublisher
+    participant Payment as Payment Context
+    participant Inventory as Inventory Context
+
+    Buyer->>Product: POST /api/orders (買一個庫存為 0 的商品)
+    Product->>Bus: OrderCreatedEvent
+    Product-->>Buyer: 201 Created (此時還不知道會失敗)
+
+    Bus-->>Payment: OrderCreatedEvent
+    Note over Payment: 扣款 successful (跟庫存無關)
+    Payment->>Bus: PaymentCompletedEvent
+
+    Bus-->>Inventory: PaymentCompletedEvent
+    Inventory->>Inventory: Stock.reserve() throws<br/>InsufficientStockException
+    Note over Inventory: 錢已經扣了,需要補償!
+    Inventory->>Bus: publishEvent(InventoryDeductionFailedEvent)
+
+    rect rgb(255, 230, 230)
+        Note over Bus,Payment: 補償流 — 退款
+        Bus-->>Payment: InventoryDeductionFailedEvent
+        Payment->>Payment: payment.refund(reason)
+        Note over Payment: PaymentStatus → REFUNDED
+    end
+```
+
+### 9.3 類別圖 — Product Context Domain Model
+
+訂單 Aggregate 用 sealed `OrderStatus` 表達狀態機;非法轉換 (例如 Created 直接跳 Completed) 由 `markCompleted()` 內檢查擋下,編譯期 + 執行期雙保險。
+
+```mermaid
+classDiagram
+    direction TB
+
+    class Order {
+        -OrderId id
+        -UserId buyerId
+        -List~OrderLine~ lines
+        -Money totalAmount
+        -OrderStatus status
+        -long version
+        +create(buyerId, lines)$ Order
+        +markPaid(paymentId)
+        +markCompleted()
+        +cancel(reason)
+        +drainEvents() List~OrderDomainEvent~
+    }
+
+    class OrderLine {
+        <<record>>
+        +ProductId productId
+        +Quantity quantity
+        +Money unitPrice
+        +subtotal() Money
+    }
+
+    class OrderStatus {
+        <<sealed interface>>
+        +at() Instant
+    }
+    class Created { <<record>> }
+    class Paid {
+        <<record>>
+        +PaymentId paymentId
+    }
+    class Completed { <<record>> }
+    class Cancelled {
+        <<record>>
+        +String reason
+    }
+    class Refunded {
+        <<record>>
+        +String reason
+    }
+
+    class Product {
+        -ProductId id
+        -String name
+        -Money price
+        -String imageObjectKey
+        +create(name, desc, price)$ Product
+        +changePrice(newPrice)
+        +attachImage(objectKey)
+    }
+
+    class PricingService {
+        <<domain service>>
+        +totalOf(lines) Money
+        +applyDiscount(total, multiplier) Money
+    }
+
+    Order "1" *-- "1..*" OrderLine
+    Order "1" --> "1" OrderStatus
+    OrderStatus <|.. Created
+    OrderStatus <|.. Paid
+    OrderStatus <|.. Completed
+    OrderStatus <|.. Cancelled
+    OrderStatus <|.. Refunded
+    PricingService ..> OrderLine
+```
+
+### 9.4 類別圖 — Payment Context Domain Model
+
+冪等鍵 `IdempotencyKey` 防重複扣款 — 同一個 order 觸發兩次事件也只會扣一次。
+
+```mermaid
+classDiagram
+    direction TB
+
+    class Payment {
+        -PaymentId id
+        -OrderId orderId
+        -Money amount
+        -IdempotencyKey idempotencyKey
+        -PaymentStatus status
+        -long version
+        +initiate(orderId, amount, key)$ Payment
+        +markCompleted(receiptObjectKey)
+        +markFailed(reason)
+        +refund(reason)
+    }
+
+    class IdempotencyKey {
+        <<record>>
+        +String value
+    }
+
+    class PaymentStatus {
+        <<sealed interface>>
+        +at() Instant
+    }
+    class Pending { <<record>> }
+    class PaymentCompleted {
+        <<record>>
+        +String receiptObjectKey
+    }
+    class Failed {
+        <<record>>
+        +String reason
+    }
+    class PaymentRefunded {
+        <<record>>
+        +String reason
+    }
+
+    Payment "1" --> "1" IdempotencyKey
+    Payment "1" --> "1" PaymentStatus
+    PaymentStatus <|.. Pending
+    PaymentStatus <|.. PaymentCompleted
+    PaymentStatus <|.. Failed
+    PaymentStatus <|.. PaymentRefunded
+```
+
+### 9.5 類別圖 — Inventory Context Domain Model
+
+`Stock` 用 `Quantity` 區分 available / reserved 兩個區段,反映「先預扣、後確認」的 Saga 步驟。
+
+```mermaid
+classDiagram
+    direction TB
+
+    class Stock {
+        -ProductId productId
+        -Quantity available
+        -Quantity reserved
+        -long version
+        +create(productId, initialAvailable)$ Stock
+        +reserve(qty)
+        +confirmReservation(qty)
+        +releaseReservation(qty)
+    }
+
+    class Reservation {
+        <<record>>
+        +OrderId orderId
+        +ProductId productId
+        +Quantity quantity
+        +Instant reservedAt
+    }
+
+    class StockAllocationService {
+        <<domain service>>
+        +reserveOrThrow(stock, qty)
+    }
+
+    class InsufficientStockException {
+        <<exception>>
+        +ProductId productId
+        +int requested
+        +int available
+    }
+
+    Stock ..> InsufficientStockException : throws
+    Stock ..> Reservation : tracked separately
+    StockAllocationService ..> Stock
+```
+
+### 9.6 類別圖 — Shared Kernel(跨 Context 共用)
+
+只放真的所有 Context 都會用的東西:Value Object、Integration Event、通用 Port。
+Integration Event 是「Bounded Context 之間的契約」,任何改動都會被 §6.3 的事件 schema 契約測試擋下。
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Money {
+        <<record>>
+        +BigDecimal amount
+        +Currency currency
+        +add(other) Money
+        +subtract(other) Money
+        +multiply(int) Money
+        +isNegative() boolean
+    }
+    class Quantity {
+        <<record>>
+        +int value
+        +add(other) Quantity
+        +subtract(other) Quantity
+        +isZero() boolean
+    }
+    class OrderId {
+        <<record>>
+        +UUID value
+    }
+    class PaymentId {
+        <<record>>
+        +UUID value
+    }
+    class ProductId {
+        <<record>>
+        +UUID value
+    }
+    class UserId {
+        <<record>>
+        +String value
+    }
+
+    class DomainEvent {
+        <<marker interface>>
+        +occurredAt() Instant
+    }
+    class OrderCreatedEvent {
+        <<record>>
+        +OrderId orderId
+        +UserId buyerId
+        +List~OrderLineItem~ lines
+        +Money totalAmount
+    }
+    class PaymentCompletedEvent {
+        <<record>>
+        +PaymentId paymentId
+        +OrderId orderId
+        +Money paidAmount
+        +String receiptObjectKey
+    }
+    class InventoryDeductedEvent {
+        <<record>>
+        +OrderId orderId
+    }
+    class PaymentFailedEvent { <<record>> }
+    class InventoryDeductionFailedEvent { <<record>> }
+
+    class ObjectStoragePort {
+        <<interface>>
+        +put(bucket, key, content, len, type)
+        +get(bucket, key) InputStream
+        +presignedGetUrl(bucket, key, ttl) String
+    }
+    class SecretProvider {
+        <<interface>>
+        +getString(path, key) Optional~String~
+    }
+
+    DomainEvent <|.. OrderCreatedEvent
+    DomainEvent <|.. PaymentCompletedEvent
+    DomainEvent <|.. InventoryDeductedEvent
+    DomainEvent <|.. PaymentFailedEvent
+    DomainEvent <|.. InventoryDeductionFailedEvent
+```
+
+### 9.7 ER-Diagram — PostgreSQL 三 Schema
+
+一個 DataSource、三個 schema,**每個 schema 對應一個 Bounded Context**。
+跨 schema 的 ID(例 `payments.order_id → product.orders.id`)是「**邏輯參考**」**不**建 FK 約束 —
+這保留了將來把某個 schema 拆到獨立 DB instance 的彈性。
+
+```mermaid
+erDiagram
+    %% ─── product schema (商品 + 訂單) ─────────────────
+    orders ||--|{ order_lines : contains
+
+    products {
+        UUID id PK
+        VARCHAR name
+        TEXT description
+        NUMERIC price_amount
+        CHAR price_currency
+        VARCHAR image_object_key
+        BIGINT version
+    }
+    orders {
+        UUID id PK
+        VARCHAR buyer_id
+        NUMERIC total_amount
+        CHAR total_currency
+        VARCHAR status_kind "CREATED/PAID/COMPLETED/CANCELLED/REFUNDED"
+        TIMESTAMP status_at
+        UUID status_payment_id "邏輯指向 payment schema"
+        VARCHAR status_reason
+        BIGINT version
+    }
+    order_lines {
+        UUID order_id PK "FK to orders"
+        INT line_index PK
+        UUID product_id "邏輯指向 products.id"
+        INT quantity
+        NUMERIC unit_amount
+        CHAR unit_currency
+    }
+
+    %% ─── payment schema (支付) ───────────────────────
+    payments {
+        UUID id PK
+        UUID order_id "邏輯指向 product.orders.id (跨 schema 不建 FK)"
+        NUMERIC amount
+        CHAR currency
+        VARCHAR idempotency_key UK "防重複扣款"
+        VARCHAR status_kind "PENDING/COMPLETED/FAILED/REFUNDED"
+        TIMESTAMP status_at
+        VARCHAR status_receipt_key "MinIO object key"
+        VARCHAR status_reason
+        BIGINT version
+    }
+
+    %% ─── inventory schema (庫存) ─────────────────────
+    stocks ||--o{ reservations : tracks
+    stocks {
+        UUID product_id PK "邏輯指向 product.products.id"
+        INT available "可賣的"
+        INT reserved "預扣的"
+        BIGINT version
+    }
+    reservations {
+        UUID order_id PK "邏輯指向 product.orders.id"
+        UUID product_id FK
+        INT quantity
+        TIMESTAMP reserved_at
+    }
+
+    %% ─── Spring Modulith 自管的事件表(各 schema 都有一份)─
+    event_publication {
+        UUID id PK
+        VARCHAR listener_id
+        VARCHAR event_type
+        VARCHAR serialized_event
+        TIMESTAMP publication_date
+        TIMESTAMP completion_date "NULL = 還沒處理成功 → 重啟時重發"
+    }
+```
+
+**重點記得**:跨 schema 沒有 FK 約束,刪除動作要靠 application 層協調(本專案沒有刪除,只有狀態變更)。
+這個設計讓未來拆分微服務時,每個 schema 直接遷到獨立 DB instance,application 層的查詢不會壞 — 因為它本來就不靠 FK join 跨 schema。
+
+---
+
+## 10. 測試策略
 
 ```
                         ╱╲
@@ -964,7 +1401,7 @@ monolithic-app-with-testcontainers-tutorial-for-java/   (repo root)
 
 ---
 
-## 10. 常見問題與排錯
+## 11. 常見問題與排錯
 
 ### Q1. `./gradlew test` 紅了,說 Docker 連不上
 
@@ -1018,7 +1455,7 @@ echo "testcontainers.reuse.enable=true" >> ~/.testcontainers.properties
 
 ---
 
-## 11. 延伸學習
+## 12. 延伸學習
 
 ### 把 DDD 推得更深
 
