@@ -1,0 +1,42 @@
+{
+  "realm": "ecommerce",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 600,
+  "roles": {
+    "realm": [
+      { "name": "buyer", "description": "Can place orders" },
+      { "name": "admin", "description": "Catalog admin" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "ecommerce-web",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"]
+    }
+  ],
+  "users": [
+    {
+      "username": "buyer01",
+      "enabled": true,
+      "email": "buyer01@example.com",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "secret", "temporary": false }],
+      "realmRoles": ["buyer"]
+    },
+    {
+      "username": "admin01",
+      "enabled": true,
+      "email": "admin01@example.com",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "secret", "temporary": false }],
+      "realmRoles": ["admin"]
+    }
+  ]
+}

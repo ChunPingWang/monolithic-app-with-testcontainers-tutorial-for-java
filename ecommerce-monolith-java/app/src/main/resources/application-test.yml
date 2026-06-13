@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:16-alpine:///ecommerce
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+logging:
+  level:
+    com.tutorial.ecommerce: DEBUG
+    org.springframework.modulith: DEBUG

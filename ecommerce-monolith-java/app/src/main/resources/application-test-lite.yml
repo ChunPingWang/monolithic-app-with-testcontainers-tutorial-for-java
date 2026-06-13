@@ -1,0 +1,14 @@
+# test-lite Profile — 移除 ES/Redis/MinIO/Vault,使用 InMemory adapter。
+# 適合本機快速 smoke test,只開 PostgreSQL Testcontainer。
+
+ecommerce:
+  adapter:
+    search: in-memory
+    cache: in-memory
+    storage: in-memory
+    secret: property-file
+    lock: reentrant
+    gateway: secret-backed
+  secrets:
+    secret/payment-gateway:
+      api-key: lite-mode-key

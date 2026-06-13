@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: ecommerce-monolith
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce
+    username: ecommerce
+    password: ecommerce
+    hikari:
+      maximum-pool-size: 20
+  flyway:
+    enabled: true
+    schemas: product, payment, inventory
+    default-schema: product
+    locations: classpath:db/migration/{vendor},classpath:db/migration/product,classpath:db/migration/payment,classpath:db/migration/inventory
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+  data:
+    redis:
+      host: localhost
+      port: 6379
+    elasticsearch:
+      uris: http://localhost:9200
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8180/realms/ecommerce
+  modulith:
+    events:
+      republish-outstanding-events-on-restart: true
+      jdbc:
+        schema-initialization:
+          enabled: true
+
+server:
+  port: 8080
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,modulith
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    com.tutorial.ecommerce: INFO
+    org.springframework.modulith: INFO

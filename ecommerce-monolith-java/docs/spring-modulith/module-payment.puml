@@ -1,0 +1,31 @@
+@startuml
+title <size:24>Payment</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("ecommercemonolith_boundary", "ecommerce-monolith", $tags="") {
+  Container_Boundary("ecommercemonolith.ecommercemonolith_boundary", "ecommerce-monolith", $tags="") {
+    Component(ecommercemonolith.ecommercemonolith.SharedKernel, "Shared Kernel", $techn="Module", $descr="", $tags="", $link="")
+    Component(ecommercemonolith.ecommercemonolith.Payment, "Payment", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(ecommercemonolith.ecommercemonolith.Payment, ecommercemonolith.ecommercemonolith.SharedKernel, "uses", $techn="", $tags="", $link="")
+Rel(ecommercemonolith.ecommercemonolith.Payment, ecommercemonolith.ecommercemonolith.SharedKernel, "listens to", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml

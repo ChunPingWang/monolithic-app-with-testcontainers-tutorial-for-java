@@ -1,0 +1,8 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.tutorial.ecommerce.inventory`
+|Events listened to
+|* `c.t.e.s.event.OrderCreatedEvent` (async) 
+* `c.t.e.s.event.PaymentCompletedEvent` (async) 
+|===

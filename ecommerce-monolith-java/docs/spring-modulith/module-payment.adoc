@@ -1,0 +1,11 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.tutorial.ecommerce.payment`
+|Bean references
+|* `c.t.e.s.port.SecretProvider` (in Shared Kernel)
+* `c.t.e.s.port.ObjectStoragePort` (in Shared Kernel)
+|Events listened to
+|* `c.t.e.s.event.InventoryDeductionFailedEvent` (async) 
+* `c.t.e.s.event.OrderCreatedEvent` (async) 
+|===

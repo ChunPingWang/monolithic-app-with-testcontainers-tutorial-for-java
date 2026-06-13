@@ -1,0 +1,27 @@
+spring:
+  cloud:
+    vault:
+      enabled: true
+      kv:
+        enabled: true
+        backend: secret
+
+ecommerce:
+  adapter:
+    search: elasticsearch
+    cache: redis
+    storage: minio
+    secret: vault
+    lock: redis
+    gateway: secret-backed
+  payment:
+    storage: minio
+    receipt-bucket: payment-receipts
+    gateway:
+      secret-path: secret/payment-gateway
+      secret-key: api-key
+
+logging:
+  level:
+    com.tutorial.ecommerce: DEBUG
+    org.springframework.modulith: DEBUG

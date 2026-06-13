@@ -1,0 +1,23 @@
+== ecommerce-monolith
+plantuml::components.puml[,,format=svg]
+
+== Infrastructure
+plantuml::module-infrastructure.puml[,,format=svg]
+include::module-infrastructure.adoc[]
+
+== Shared Kernel
+plantuml::module-sharedkernel.puml[,,format=svg]
+include::module-sharedkernel.adoc[]
+
+== Inventory
+plantuml::module-inventory.puml[,,format=svg]
+include::module-inventory.adoc[]
+
+== Payment
+plantuml::module-payment.puml[,,format=svg]
+include::module-payment.adoc[]
+
+== Product
+plantuml::module-product.puml[,,format=svg]
+include::module-product.adoc[]
+
